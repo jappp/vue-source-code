@@ -191,7 +191,7 @@ const patch = (n1, n2, container, anchor = null, parentComponent = null, parentS
   }
 }
 
-/* 用来处理组件的 processComponent 函数的实现 */
+/* 对组件节点的处理 start */
 const processComponent = (n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, optimized) => {
   if (n1 == null) {
    // 挂载组件
@@ -203,7 +203,6 @@ const processComponent = (n1, n2, container, anchor, parentComponent, parentSusp
   }
 }
 
-/* 挂载组件的 mountComponent 函数的实现 */
 const mountComponent = (initialVNode, container, anchor, parentComponent, parentSuspense, isSVG, optimized) => {
   // 创建组件实例
   const instance = (initialVNode.component = createComponentInstance(initialVNode, parentComponent, parentSuspense))
@@ -232,3 +231,56 @@ const setupRenderEffect = (instance, initialVNode, container, anchor, parentSusp
     }
   }, prodEffectOptions)
 }
+/* 对组件节点的处理 end */
+
+/* 处理普通 DOM元素 start */
+const processElement = (n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, optimized) => {
+  isSVG = isSVG || n2.type === 'svg'
+  if (n1 == null) {
+    //挂载元素节点
+    mountElement(n2, container, anchor, parentComponent, parentSuspense, isSVG, optimized)
+  }
+  else {
+    //更新元素节点
+    patchElement(n1, n2, parentComponent, parentSuspense, isSVG, optimized)
+  }
+}
+
+const mountElement = (vnode, container, anchor, parentComponent, parentSuspense, isSVG, optimized) => {
+  let el
+  const { type, props, shapeFlag } = vnode
+  // 创建 DOM 元素节点
+  el = vnode.el = hostCreateElement(vnode.type, isSVG, props && props.is)
+  if (props) {
+    // 处理 props，比如 class、style、event 等属性
+    for (const key in props) {
+      if (!isReservedProp(key)) {
+        hostPatchProp(el, key, null, props[key], isSVG)
+      }
+    }
+  }
+  /* 接下来是对子节点的处理，我们知道 DOM 是一棵树，vnode 同样也是一棵树，并且它和 DOM 结构是一一映射的。 */
+  if (shapeFlag & 8 /* TEXT_CHILDREN */) {
+    // 处理子节点是纯文本的情况
+    hostSetElementText(el, vnode.children)
+  }
+  else if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
+    // 处理子节点是数组的情况
+    mountChildren(vnode.children, el, null, parentComponent, parentSuspense, isSVG && type !== 'foreignObject', optimized || !!vnode.dynamicChildren)
+  }
+  // 把创建的 DOM 元素节点挂载到 container 上
+  /* 因为 insert 的执行是在处理子节点后，所以挂载的顺序是先子节点，后父节点，最终挂载到最外层的容器上。 */
+  hostInsert(el, container, anchor)
+}
+
+const mountChildren = (children, container, anchor, parentComponent, parentSuspense, isSVG, optimized, start = 0) => {
+  for (let i = start; i < children.length; i++) {
+    // 预处理 child
+    const child = (children[i] = optimized
+      ? cloneIfMounted(children[i])
+      : normalizeVNode(children[i]))
+    // 递归 patch 挂载 child
+    patch(null, child, container, anchor, parentComponent, parentSuspense, isSVG, optimized)
+  }
+}
+/* 处理普通 DOM元素 end */
