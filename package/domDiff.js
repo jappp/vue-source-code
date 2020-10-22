@@ -138,3 +138,68 @@ const updateComponentPreRender = (instance, nextVNode, optimized) => {
   // 更新 插槽
   updateSlots(instance, nextVNode.children)
 }
+
+const processElement = (n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, optimized) => {
+  isSVG = isSVG || n2.type === 'svg'
+  if (n1 == null) {
+    // 挂载元素
+  }
+  else {
+    // 更新元素
+    patchElement(n1, n2, parentComponent, parentSuspense, isSVG, optimized)
+  }
+}
+/* 更新元素的过程主要做两件事情：更新 props 和更新子节点 */
+const patchElement = (n1, n2, parentComponent, parentSuspense, isSVG, optimized) => {
+  const el = (n2.el = n1.el)
+  const oldProps = (n1 && n1.props) || EMPTY_OBJ
+  const newProps = n2.props || EMPTY_OBJ
+  // 更新 props
+  patchProps(el, n2, oldProps, newProps, parentComponent, parentSuspense, isSVG)
+  const areChildrenSVG = isSVG && n2.type !== 'foreignObject'
+  // 更新子节点
+  patchChildren(n1, n2, el, null, parentComponent, parentSuspense, areChildrenSVG)
+}
+
+const patchChildren = (n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, optimized = false) => {
+  const c1 = n1 && n1.children
+  const prevShapeFlag = n1 ? n1.shapeFlag : 0
+  const c2 = n2.children
+  const { shapeFlag } = n2
+  // 子节点有 3 种可能情况：文本、数组、空
+  if (shapeFlag & 8 /* TEXT_CHILDREN */) {
+    if (prevShapeFlag & 16 /* ARRAY_CHILDREN */) {
+      // 数组 -> 文本，则删除之前的子节点
+      unmountChildren(c1, parentComponent, parentSuspense)
+    }
+    if (c2 !== c1) {
+      // 文本对比不同，则替换为新文本
+      hostSetElementText(container, c2)
+    }
+  }
+  else {
+    if (prevShapeFlag & 16 /* ARRAY_CHILDREN */) {
+      // 之前的子节点是数组
+      if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
+        // 新的子节点仍然是数组，则做完整地 diff
+        patchKeyedChildren(c1, c2, container, anchor, parentComponent, parentSuspense, isSVG, optimized)
+      }
+      else {
+        // 数组 -> 空，则仅仅删除之前的子节点
+        unmountChildren(c1, parentComponent, parentSuspense, true)
+      }
+    }
+    else {
+      // 之前的子节点是文本节点或者为空
+      // 新的子节点是数组或者为空
+      if (prevShapeFlag & 8 /* TEXT_CHILDREN */) {
+        // 如果之前子节点是文本，则把它清空
+        hostSetElementText(container, '')
+      }
+      if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
+        // 如果新的子节点是数组，则挂载新子节点
+        mountChildren(c2, container, anchor, parentComponent, parentSuspense, isSVG, optimized)
+      }
+    }
+  }
+}
