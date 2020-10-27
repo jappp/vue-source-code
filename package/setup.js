@@ -128,6 +128,29 @@ function setupComponent (instance, isSSR = false) {
   return setupResult
 }
 
+function setupStatefulComponent (instance, isSSR) {
+  const Component = instance.type
+  // 创建渲染代理的属性访问缓存
+  instance.accessCache = {}
+  // 创建渲染上下文代理
+  instance.proxy = new Proxy(instance.ctx, PublicInstanceProxyHandlers)
+  // 判断处理 setup 函数
+  const { setup } = Component
+  if (setup) {
+    // 如果 setup 函数带参数，则创建一个 setupContext
+    const setupContext = (instance.setupContext =
+      setup.length > 1 ? createSetupContext(instance) : null)
+    // 执行 setup 函数，获取结果
+    const setupResult = callWithErrorHandling(setup, instance, 0 /* SETUP_FUNCTION */, [instance.props, setupContext])
+    // 处理 setup 执行结果
+    handleSetupResult(instance, setupResult)
+  }
+  else {
+    // 完成组件实例设置
+    finishComponentSetup(instance)
+  }
+}
+
 const PublicInstanceProxyHandlers = {
   get ({ _: instance }, key) {
     const { ctx, setupState, data, props, accessCache, type, appContext } = instance
@@ -213,3 +236,180 @@ const PublicInstanceProxyHandlers = {
     }
   }
 }
+
+const PublicInstanceProxyHandlers = {
+  set ({ _: instance }, key, value) {
+    const { data, setupState, ctx } = instance
+    if (setupState !== EMPTY_OBJ && hasOwn(setupState, key)) {
+      // 给 setupState 赋值
+      setupState[key] = value
+    }
+    else if (data !== EMPTY_OBJ && hasOwn(data, key)) {
+      // 给 data 赋值
+      data[key] = value
+    }
+    else if (key in instance.props) {
+      // 不能直接给 props 赋值
+      (process.env.NODE_ENV !== 'production') &&
+      warn(`Attempting to mutate prop "${key}". Props are readonly.`, instance)
+      return false
+    }
+    if (key[0] === '$' && key.slice(1) in instance) {
+      // 不能给 Vue 内部以 $ 开头的保留属性赋值
+      (process.env.NODE_ENV !== 'production') &&
+      warn(`Attempting to mutate public property "${key}". ` +
+        `Properties starting with $ are reserved and readonly.`, instance)
+      return false
+    }
+    else {
+      // 用户自定义数据赋值
+      ctx[key] = value
+    }
+    return true
+  }
+}
+
+const PublicInstanceProxyHandlers = {
+  has
+    ({ _: { data, setupState, accessCache, ctx, type, appContext } }, key) {
+    // 依次判断
+    return (accessCache[key] !== undefined ||
+      (data !== EMPTY_OBJ && hasOwn(data, key)) ||
+      (setupState !== EMPTY_OBJ && hasOwn(setupState, key)) ||
+      (type.props && hasOwn(normalizePropsOptions(type.props)[0], key)) ||
+      hasOwn(ctx, key) ||
+      hasOwn(publicPropertiesMap, key) ||
+      hasOwn(appContext.config.globalProperties, key))
+  }
+}
+
+// 判断处理 setup 函数
+const { setup } = Component
+if (setup) {
+  // 如果 setup 函数带参数，则创建一个 setupContext
+  const setupContext = (instance.setupContext =
+    setup.length > 1 ? createSetupContext(instance) : null)
+  // 执行 setup 函数获取结果
+  const setupResult = callWithErrorHandling(setup, instance, 0 /* SETUP_FUNCTION */, [instance.props, setupContext])
+  // 处理 setup 执行结果
+  handleSetupResult(instance, setupResult)
+}
+
+function createSetupContext (instance) {
+  return {
+    attrs: instance.attrs,
+    slots: instance.slots,
+    emit: instance.emit
+  }
+}
+
+const setupResult = callWithErrorHandling(setup, instance, 0 /* SETUP_FUNCTION */, [instance.props, setupContext])
+function callWithErrorHandling (fn, instance, type, args) {
+  let res
+  try {
+    res = args ? fn(...args) : fn()
+  }
+  catch (err) {
+    handleError(err, instance, type)
+  }
+  return res
+}
+
+function handleSetupResult(instance, setupResult) {
+  if (isFunction(setupResult)) {
+    // setup 返回渲染函数
+    instance.render = setupResult
+  }
+  else if (isObject(setupResult)) {
+    // 把 setup 返回结果变成响应式
+    instance.setupState = reactive(setupResult)
+  }
+  finishComponentSetup(instance)
+}
+
+function finishComponentSetup (instance) {
+  const Component = instance.type
+  // 对模板或者渲染函数的标准化
+  if (!instance.render) {
+    if (compile && Component.template && !Component.render) {
+      // 运行时编译
+      Component.render = compile(Component.template, {
+        isCustomElement: instance.appContext.config.isCustomElement || NO
+      })
+      Component.render._rc = true
+    }
+    if ((process.env.NODE_ENV !== 'production') && !Component.render) {
+      if (!compile && Component.template) {
+        // 只编写了 template 但使用了 runtime-only 的版本
+        warn(`Component provided template option but ` +
+          `runtime compilation is not supported in this build of Vue.` +
+          (` Configure your bundler to alias "vue" to "vue/dist/vue.esm-bundler.js".`
+          ) /* should not happen */)
+      }
+      else {
+        // 既没有写 render 函数，也没有写 template 模板
+        warn(`Component is missing template or render function.`)
+      }
+    }
+    // 组件对象的 render 函数赋值给 instance
+    instance.render = (Component.render || NOOP)
+    if (instance.render._rc) {
+      // 对于使用 with 块的运行时编译的渲染函数，使用新的渲染上下文的代理
+      instance.withProxy = new Proxy(instance.ctx, RuntimeCompiledPublicInstanceProxyHandlers)
+    }
+  }
+  // 兼容 Vue.js 2.x Options API
+  {
+    currentInstance = instance
+    applyOptions(instance, Component)
+    currentInstance = null
+  }
+}
+
+const RuntimeCompiledPublicInstanceProxyHandlers = {
+  ...PublicInstanceProxyHandlers,
+  get(target, key) {
+    if (key === Symbol.unscopables) {
+      return
+    }
+    return PublicInstanceProxyHandlers.get(target, key, target)
+  },
+  has(_, key) {
+    // 如果 key 以 _ 开头或者 key 在全局变量白名单内，则 has 为 false
+    const has = key[0] !== '_' && !isGloballyWhitelisted(key)
+    if ((process.env.NODE_ENV !== 'production') && !has && PublicInstanceProxyHandlers.has(_, key)) {
+      warn(`Property ${JSON.stringify(key)} should not start with _ which is a reserved prefix for Vue internals.`)
+    }
+    return has
+  }
+}
+
+function applyOptions(instance, options, deferredData = [], deferredWatch = [], asMixin = false) {
+  const {
+    // 组合
+    mixins, extends: extendsOptions,
+    // 数组状态
+    props: propsOptions, data: dataOptions, computed: computedOptions, methods, watch: watchOptions, provide: provideOptions, inject: injectOptions,
+    // 组件和指令
+    components, directives,
+    // 生命周期
+    beforeMount, mounted, beforeUpdate, updated, activated, deactivated, beforeUnmount, unmounted, renderTracked, renderTriggered, errorCaptured } = options;
+  // instance.proxy 作为 this
+  const publicThis = instance.proxy;
+  const ctx = instance.ctx;
+  // 处理全局 mixin
+  // 处理 extend
+  // 处理本地 mixins
+  // props 已经在外面处理过了
+  // 处理 inject
+  // 处理 方法
+  // 处理 data
+  // 处理计算属性
+  // 处理 watch
+  // 处理 provide
+  // 处理组件
+  // 处理指令
+  // 处理生命周期 option
+}
+
+
