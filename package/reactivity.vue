@@ -1,19 +1,22 @@
 <template>
   <div>
-    <p>{{ msg }}</p>
+    <p>{{ state.msg }}</p>
     <button @click="random">Random msg</button>
   </div>
 </template>
 <script>
+  import { reactive } from 'vue'
   export default {
-    data() {
-      return {
+    setup() {
+      const state = reactive({
         msg: 'msg reactive'
+      })
+      const random = function() {
+        state.msg = Math.random()
       }
-    },
-    methods: {
-      random() {
-        this.msg = Math.random()
+      return {
+        random,
+        state
       }
     }
   }
