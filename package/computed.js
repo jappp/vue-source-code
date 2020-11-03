@@ -60,3 +60,28 @@ function computed(getterOrOptions) {
   } 
   return computed 
 }
+
+const add = (effectsToAdd) => { 
+  if (effectsToAdd) { 
+    effectsToAdd.forEach(effect => { 
+      if (effect !== activeEffect || !shouldTrack) { 
+        if (effect.options.computed) { 
+          computedRunners.add(effect) 
+        } 
+        else { 
+          effects.add(effect) 
+        } 
+      } 
+    }) 
+  } 
+} 
+const run = (effect) => { 
+  if (effect.options.scheduler) { 
+    effect.options.scheduler(effect) 
+  } 
+  else { 
+    effect() 
+  } 
+} 
+computedRunners.forEach(run) 
+effects.forEach(run)
