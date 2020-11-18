@@ -295,5 +295,90 @@ function parseChildren(context, mode, ancestors) {
 
 } 
 
+function parseComment(context) { 
+
+  const start = getCursor(context) 
+
+  let content 
+
+  // 常规注释的结束符 
+
+  const match = /--(\!)?>/.exec(context.source) 
+
+  if (!match) { 
+
+    // 没有匹配的注释结束符 
+
+    content = context.source.slice(4) 
+
+    advanceBy(context, context.source.length) 
+
+    emitError(context, 7 /* EOF_IN_COMMENT */) 
+
+  } 
+
+  else { 
+
+    if (match.index <= 3) { 
+
+      // 非法的注释符号 
+
+      emitError(context, 0 /* ABRUPT_CLOSING_OF_EMPTY_COMMENT */) 
+
+    } 
+
+    if (match[1]) { 
+
+      // 注释结束符不正确 
+
+      emitError(context, 10 /* INCORRECTLY_CLOSED_COMMENT */) 
+
+    } 
+
+    // 获取注释的内容 
+
+    content = context.source.slice(4, match.index) 
+
+    // 截取到注释结尾之间的代码，用于后续判断嵌套注释 
+
+    const s = context.source.slice(0, match.index) 
+
+    let prevIndex = 1, nestedIndex = 0 
+
+    // 判断嵌套注释符的情况，存在即报错 
+
+    while ((nestedIndex = s.indexOf('<!--', prevIndex)) !== -1) { 
+
+      advanceBy(context, nestedIndex - prevIndex + 1) 
+
+      if (nestedIndex + 4 < s.length) { 
+
+        emitError(context, 16 /* NESTED_COMMENT */) 
+
+      } 
+
+      prevIndex = nestedIndex + 1 
+
+    } 
+
+    // 前进代码到注释结束符后 
+
+    advanceBy(context, match.index + match[0].length - prevIndex + 1) 
+
+  } 
+
+  return { 
+
+    type: 3 /* COMMENT */, 
+
+    content, 
+
+    loc: getSelection(context, start) 
+
+  } 
+
+} 
+
+
 
 
