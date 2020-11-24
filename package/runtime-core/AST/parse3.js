@@ -311,5 +311,76 @@ function createIfBranch(node, dir) {
 
 }
 
+function createChildrenCodegenNode(branch, index, context) {
+
+  const { helper } = context
+
+  // 根据 index 创建 key 属性
+
+  const keyProperty = createObjectProperty(`key`, createSimpleExpression(index + '', false))
+
+  const { children } = branch
+
+  const firstChild = children[0]
+
+  const needFragmentWrapper = children.length !== 1 || firstChild.type !== 1 /* ELEMENT */
+
+  if (needFragmentWrapper) {
+
+    if (children.length === 1 && firstChild.type === 11 /* FOR */) {
+
+      const vnodeCall = firstChild.codegenNode
+
+      injectProp(vnodeCall, keyProperty, context)
+
+      return vnodeCall
+
+    }
+
+    else {
+
+      return createVNodeCall(context, helper(FRAGMENT), createObjectExpression([keyProperty]), children, `${64 /* STABLE_FRAGMENT */} /* ${PatchFlagNames[64 /* STABLE_FRAGMENT */]} */`, undefined, undefined, true, false, branch.loc)
+
+    }
+
+  } 
+
+  else {
+
+    const vnodeCall = firstChild
+
+      .codegenNode;
+
+    // 把 createVNode 改变为 createBlock
+
+    if (vnodeCall.type === 13 /* VNODE_CALL */ &&
+
+      // 组件节点的 children 会被视为插槽，不需要添加 block
+
+      (firstChild.tagType !== 1 /* COMPONENT */ ||
+
+        vnodeCall.tag === TELEPORT)) {
+
+      vnodeCall.isBlock = true
+
+      // 创建 block 的辅助代码
+
+      helper(OPEN_BLOCK)
+
+      helper(CREATE_BLOCK)
+
+    }
+
+    // 给 branch 注入 key 属性
+
+    injectProp(vnodeCall, keyProperty, context)
+
+    return vnodeCall
+
+  }
+
+}
+
+
 
 
