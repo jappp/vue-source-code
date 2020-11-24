@@ -135,3 +135,92 @@ const transformText = (node, context) => {
   }
 
 }
+
+function createCallExpression(callee, args = [], loc = locStub) {
+
+  return {
+
+    type: 14 /* JS_CALL_EXPRESSION */,
+
+    loc,
+
+    callee,
+
+    arguments: args
+
+  }
+
+}
+
+// v-if 节点转换函数的实现
+const transformIf = createStructuralDirectiveTransform(/^(if|else|else-if)$/, (node, dir, context) => {
+
+  return processIf(node, dir, context, (ifNode, branch, isRoot) => {
+
+    return () => {
+
+      // 退出回调函数，当所有子节点转换完成执行
+
+    }
+
+  })
+
+})
+
+function createStructuralDirectiveTransform(name, fn) {
+
+  const matches = isString(name)
+
+    ? (n) => n === name
+
+    : (n) => name.test(n)
+
+  return (node, context) => {
+
+    // 只处理元素节点
+
+    if (node.type === 1 /* ELEMENT */) {
+
+      const { props } = node
+
+      // 结构化指令的转换与插槽无关，插槽相关处理逻辑在 vSlot.ts 中
+
+      if (node.tagType === 3 /* TEMPLATE */ && props.some(isVSlot)) {
+
+        return
+
+      }
+
+      const exitFns = []
+
+      for (let i = 0; i < props.length; i++) {
+
+        const prop = props[i]
+
+        if (prop.type === 7 /* DIRECTIVE */ && matches(prop.name)) {
+
+          // 删除结构指令以避免无限递归
+
+          props.splice(i, 1)
+
+          i--
+
+          const onExit = fn(node, prop, context)
+
+          if (onExit)
+
+            exitFns.push(onExit)
+
+        }
+
+      }
+
+      return exitFns
+
+    }
+
+  }
+
+}
+
+
