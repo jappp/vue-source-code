@@ -80,3 +80,51 @@ function withDirectives(vnode, directives) {
   }
   return vnode
 }
+
+const mountElement = (vnode, container, anchor, parentComponent, parentSuspense, isSVG, optimized) => {
+  let el
+  const { type, props, shapeFlag, dirs } = vnode
+  // 创建 DOM 元素节点
+  el = vnode.el = hostCreateElement(vnode.type, isSVG, props && props.is)
+  if (props) {
+    // 处理 props，比如 class、style、event 等属性
+  }
+  if (shapeFlag & 8 /* TEXT_CHILDREN */) {
+    // 处理子节点是纯文本的情况
+    hostSetElementText(el, vnode.children)
+  } else if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
+    // 处理子节点是数组的情况，挂载子节点
+    mountChildren(vnode.children, el, null, parentComponent, parentSuspense, isSVG && type !== 'foreignObject', optimized || !!vnode.dynamicChildren)
+  }
+  if (dirs) {
+    invokeDirectiveHook(vnode, null, parentComponent, 'beforeMount')
+  }
+  // 把创建的 DOM 元素节点挂载到 container 上
+  hostInsert(el, container, anchor)
+  if (dirs) {
+    queuePostRenderEffect(()=>{ 
+      invokeDirectiveHook(vnode, null, parentComponent, 'mounted')
+    })
+  }
+}
+
+
+function invokeDirectiveHook(vnode, prevVNode, instance, name) {
+  const bindings = vnode.dirs
+  const oldBindings = prevVNode && prevVNode.dirs
+  for (let i = 0; i < bindings.length; i++) {
+    const binding = bindings[i]
+    if (oldBindings) {
+      binding.oldValue = oldBindings[i].value
+    }
+    const hook = binding.dir[name]
+    if (hook) {
+      callWithAsyncErrorHandling(hook, instance, 8 /* DIRECTIVE_HOOK */, [
+        vnode.el,
+        binding,
+        vnode,
+        prevVNode
+      ])
+    }
+  }
+}
