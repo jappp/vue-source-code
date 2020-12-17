@@ -51,3 +51,50 @@ return () => {
   current = vnode
   return vnode
 }
+
+sharedContext.activate = (vnode, container, anchor, isSVG, optimized) => {
+  const instance = vnode.component
+  move(vnode, container, anchor, 0 /* ENTER */, parentSuspense)
+  patch(instance.vnode, vnode, container, anchor, instance, parentSuspense, isSVG, optimized)
+  queuePostRenderEffect(() => {
+    instance.isDeactivated = false
+    if (instance.a) {
+      invokeArrayFns(instance.a)
+    }
+    const vnodeHook = vnode.props && vnode.props.onVnodeMounted
+    if (vnodeHook) {
+      invokeVNodeHook(vnodeHook, instance.parent, vnode)
+    }
+  }, parentSuspense)
+}
+
+
+sharedContext.deactivate = (vnode) => {
+  const instance = vnode.component
+  move(vnode, storageContainer, null, 1 /* LEAVE */, parentSuspense)
+  queuePostRenderEffect(() => {
+    if (instance.da) {
+      invokeArrayFns(instance.da)
+    }
+    const vnodeHook = vnode.props && vnode.props.onVnodeUnmounted
+    if (vnodeHook) {
+      invokeVNodeHook(vnodeHook, instance.parent, vnode)
+    }
+    instance.isDeactivated = true
+  }, parentSuspense)
+}
+
+
+onBeforeUnmount(() => {
+  cache.forEach(cached => {
+    const { subTree, suspense } = instance
+    if (cached.type === subTree.type) {
+      resetShapeFlag(subTree)
+      const da = subTree.component.da
+      da && queuePostRenderEffect(da, suspense)
+      return
+    }
+    unmount(cached)
+  })
+})  
+
